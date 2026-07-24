@@ -1,0 +1,10 @@
+Third-party components bundled with this project.
+
+three.js — js/lib/three.module.js
+  Copyright (c) 2010-2024 three.js authors
+  MIT License, https://github.com/mrdoob/three.js
+
+Everything else in this repository is original work under the MIT License in
+LICENSE. There are no other bundled dependencies: no models, textures,
+photographs, fonts or audio files. Every shape on screen is generated at
+runtime from the constants in js/bio.js.

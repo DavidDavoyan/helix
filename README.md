@@ -191,4 +191,9 @@ frame loop.
 
 ## Licence
 
-MIT. See [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE).
+
+The one bundled dependency, three.js, is also MIT; see [NOTICE](NOTICE).
+Nothing else is vendored: no models, textures, photographs, fonts or audio.
+Every shape on screen is generated at runtime from the constants in
+[`js/bio.js`](js/bio.js).
