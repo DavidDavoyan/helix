@@ -177,6 +177,33 @@ export const RESIDUE_VOLUME = {
   Y: 194, W: 228, '*': 100,
 };
 
+/**
+ * Chou-Fasman helix propensity, P(alpha). Above 1.0 the residue is found in
+ * alpha helices more often than chance; below, less.
+ *
+ * The two at the bottom of the list are the interesting ones. Glycine has no
+ * side chain, so the backbone can go anywhere and there is no reason to pick
+ * the helix. Proline's side chain loops back and bonds to its own backbone
+ * nitrogen, so it has no N-H to donate and it kinks the chain — a proline in
+ * the middle of a helix breaks it. Both come out at 0.57, and in the folding
+ * here that is what decides where a helix stops.
+ */
+export const HELIX_PROPENSITY = {
+  E: 1.51, M: 1.45, A: 1.42, L: 1.21, K: 1.16, F: 1.13, Q: 1.11, W: 1.08,
+  I: 1.08, V: 1.06, D: 1.01, H: 1.00, R: 0.98, T: 0.83, S: 0.77, C: 0.70,
+  Y: 0.69, N: 0.67, P: 0.57, G: 0.57, '*': 0.5,
+};
+
+/**
+ * Alpha-carbon distances that define an alpha helix, in angstroms. A chain
+ * holding all three at once has nowhere to go but 3.6 residues per turn with a
+ * 1.5 A rise — the helix is not imposed, it is what these distances mean.
+ */
+export const HELIX_SPACING = {
+  i3: 5.0,   // Ca(i) to Ca(i+3)
+  i4: 6.2,   // Ca(i) to Ca(i+4) — the one the backbone hydrogen bond makes
+};
+
 /** Kyte-Doolittle hydropathy. Positive is water-hating. */
 export const HYDROPATHY = {
   I: 4.5, V: 4.2, L: 3.8, F: 2.8, C: 2.5, M: 1.9, A: 1.8, G: -0.4, T: -0.7,
@@ -274,6 +301,16 @@ export const PRESETS = [
     // the ribosome actually built it.
     note: 'Click position 20 (A→T): GAG becomes GTG, and that one letter is sickle-cell.',
     seq: 'ATGGTGCACCTGACTCCTGAGGAGAAGTCTGCCGTTACTGCCCTGTGGGGCAAGTAA',
+  },
+  {
+    id: 'villin',
+    name: 'Villin headpiece HP36',
+    // MLSDEDFKAVFGMTRSAFANLPLWKQQNLKKEKGLF — 36 residues, three short helices,
+    // and the standard benchmark for folding simulations because it is about
+    // the smallest thing that folds into a real protein rather than a blob.
+    // Long enough to have an inside, which the other presets are not.
+    note: 'Thirty-six residues that genuinely fold. Use the Proteins view on this one.',
+    seq: 'ATGCTGAGCGATGAAGATTTTAAAGCGGTGTTTGGCATGACCCGTAGCGCGTTTGCGAACCTGCCGCTGTGGAAACAGCAGAACCTGAAAAAAGAAAAAGGCCTGTTTTAA',
   },
   {
     id: 'tata',

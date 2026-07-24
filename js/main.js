@@ -8,6 +8,7 @@ import { DEFAULT_SEQUENCE, PRESETS, cleanSequence, BDNA } from './bio.js';
 import { Stage, zOf } from './stage.js';
 import { StructureScene, ReplicationScene } from './scene-dna.js';
 import { TranscriptionScene, TranslationScene } from './scene-expression.js';
+import { ProteinScene } from './scene-protein.js';
 import { Orbit } from './controls.js';
 import { Composer } from './post.js';
 import { UI } from './ui.js';
@@ -156,6 +157,7 @@ const scenes = {
   replication: new ReplicationScene(stage),
   transcription: new TranscriptionScene(stage),
   translation: new TranslationScene(stage),
+  protein: new ProteinScene(stage),
 };
 
 let current = null;
@@ -187,6 +189,11 @@ function frameScene(id, snap = false) {
       break;
     case 'translation':
       orbit.frame({ target: [0, 16, 0], distance: 165, theta: 1.52, phi: 1.30 }, snap);
+      break;
+    case 'protein':
+      // Starts wide on the extended chain; the follow below pulls in as it
+      // collapses, because a folded 36-mer is a twentieth the length.
+      orbit.frame({ target: [0, 0, 0], distance: Math.max(120, span * 0.55), theta: 1.1, phi: 1.24 }, snap);
       break;
     default: break;
   }
@@ -223,7 +230,13 @@ const ui = new UI({
   onPlayToggle: () => { playing = !playing; ui.setPlaying(playing); },
   onRestart: () => restart(),
   onSpeed: (v) => { speed = v; },
-  onTemperature: (v) => { scenes.structure.temperature = v; },
+  // One slider, two meanings: it melts base pairs in the DNA view and
+  // denatures the fold in the protein view. Both are the same idea — heat
+  // against many weak bonds — so they share a control.
+  onTemperature: (v) => {
+    scenes.structure.temperature = v;
+    scenes.protein.temperature = v;
+  },
   onToggle: (k, v) => {
     const r = stage.renderer;
     if (k === 'bases') r.showBases = v;
@@ -231,7 +244,9 @@ const ui = new UI({
     if (k === 'sugars') r.showSugars = v;
     if (k === 'hbonds') r.showHBonds = v;
     if (k === 'grooves') scenes.structure.showGrooves = v;
-    if (k === 'pool') stage.pool.setVisible(v && currentId !== 'translation' && currentId !== 'structure');
+    if (k === 'pool') {
+      stage.pool.setVisible(v && !['translation', 'structure', 'protein'].includes(currentId));
+    }
     if (k === 'labels') stage.showLabels = v;
     if (k === 'spin') orbit.autoRotate = v ? 0.16 : 0;
   },
@@ -268,6 +283,18 @@ function step(dt) {
     follow(0, 0, zOf(Math.max(0, current.fork), stage.n), 1.1);
   } else if (currentId === 'transcription') {
     follow(0, -4, zOf(Math.max(0, Math.min(stage.n - 1, current.pos)), stage.n), 1.1);
+  } else if (currentId === 'protein' && stage.peptide.count) {
+    // Track the protein and frame to its actual size, so the shot tightens as
+    // the chain collapses instead of leaving it a speck in the middle.
+    const p = stage.peptide;
+    _follow.set(0, 0, 0);
+    for (let i = 0; i < p.count; i++) _follow.add(p.pos[i]);
+    _follow.multiplyScalar(1 / p.count);
+    orbit.goalTarget.lerp(_follow, Math.min(1, dt * 1.8));
+    if (!orbit._pointers.size) {
+      const want = Math.max(78, p.radiusOfGyration() * 7.5);
+      orbit.goalDistance += (want - orbit.goalDistance) * Math.min(1, dt * 0.6);
+    }
   }
 
   stage.peptide.render();

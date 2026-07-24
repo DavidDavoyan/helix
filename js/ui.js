@@ -41,6 +41,8 @@ export class UI {
       temp: $('temp'),
       tempVal: $('temp-val'),
       tempRow: $('temp-row'),
+      tempLabel: $('temp-label'),
+      track: $('track'),
       toggles: $('toggles'),
       caption: $('caption'),
       progress: $('progress-bar'),
@@ -69,6 +71,7 @@ export class UI {
       ['replication', 'Replication'],
       ['transcription', 'Transcription'],
       ['translation', 'Translation'],
+      ['protein', 'Proteins'],
     ];
     this._modeButtons = {};
     for (const [id, label] of modes) {
@@ -195,9 +198,19 @@ export class UI {
     for (const [key, b] of Object.entries(this._modeButtons)) {
       b.setAttribute('aria-selected', String(key === id));
     }
-    this.el.tempRow.style.display = id === 'structure' ? '' : 'none';
-    this.el.peptideStrip.hidden = id !== 'translation';
+    // The temperature slider does different work in different views: it melts
+    // base pairs in one and denatures the fold in the other. Say which.
+    const heated = id === 'structure' || id === 'protein';
+    this.el.tempRow.style.display = heated ? '' : 'none';
+    this.el.tempLabel.textContent = id === 'protein' ? 'Temperature — denature' : 'Temperature';
+
+    this.el.peptideStrip.hidden = !(id === 'translation' || id === 'protein');
     this._toggleEls.grooves.label.style.display = id === 'structure' ? '' : 'none';
+    for (const k of ['bases', 'backbone', 'sugars', 'hbonds', 'pool']) {
+      this._toggleEls[k].label.style.display = id === 'protein' ? 'none' : '';
+    }
+    this.el.track.style.display = id === 'protein' ? 'none' : '';
+
     this.el.trackLabel.textContent = id === 'translation'
       ? 'mRNA, 5′ → 3′'
       : 'Coding strand, 5′ → 3′';
@@ -255,7 +268,7 @@ export class UI {
       this._lastEvents = evKey;
     }
 
-    if (sceneId === 'translation') {
+    if (sceneId === 'translation' || sceneId === 'protein') {
       const key = (state.peptide || []).join('');
       if (this._lastPeptide !== key) {
         e.peptideList.replaceChildren();

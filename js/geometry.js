@@ -149,7 +149,7 @@ export class Ribbon {
    * @param {number} maxPoints  most spine points that will ever be supplied
    * @param {number} radial     cross-section resolution
    */
-  constructor(maxPoints, radius, radial = 8) {
+  constructor(maxPoints, radius, radial = 8, { vertexColours = false } = {}) {
     this.maxPoints = maxPoints;
     this.radius = radius;
     this.radial = radial;
@@ -158,6 +158,7 @@ export class Ribbon {
     const verts = maxPoints * radial;
     this.position = new Float32Array(verts * 3);
     this.normal = new Float32Array(verts * 3);
+    this.colour = vertexColours ? new Float32Array(verts * 3) : null;
 
     const index = new Uint32Array((maxPoints - 1) * radial * 6);
     for (let s = 0; s < maxPoints - 1; s++) {
@@ -175,6 +176,7 @@ export class Ribbon {
     this.geometry = new THREE.BufferGeometry();
     this.geometry.setAttribute('position', new THREE.BufferAttribute(this.position, 3));
     this.geometry.setAttribute('normal', new THREE.BufferAttribute(this.normal, 3));
+    if (this.colour) this.geometry.setAttribute('color', new THREE.BufferAttribute(this.colour, 3));
     this.geometry.setIndex(new THREE.BufferAttribute(index, 1));
     this.geometry.setDrawRange(0, 0);
     this.geometry.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 1e4);
@@ -189,8 +191,9 @@ export class Ribbon {
    * @param {THREE.Vector3[]} pts   spine, at least two points
    * @param {number}          count how many of them to use
    * @param {number[]}        [taper] optional per-point radius multiplier
+   * @param {THREE.Color[]}   [colours] optional per-point colour
    */
-  update(pts, count = pts.length, taper = null) {
+  update(pts, count = pts.length, taper = null, colours = null) {
     count = Math.min(count, this.maxPoints);
     this.count = count;
     if (count < 2) {
@@ -231,6 +234,7 @@ export class Ribbon {
 
       const r = this.radius * (taper ? taper[i] : 1);
       const p = pts[i];
+      const col = this.colour && colours ? colours[i] : null;
       for (let k = 0; k < radial; k++) {
         const a = (k / radial) * Math.PI * 2;
         const nx = up.x * Math.cos(a) + side.x * Math.sin(a);
@@ -243,11 +247,17 @@ export class Ribbon {
         normal[o + 0] = nx;
         normal[o + 1] = ny;
         normal[o + 2] = nz;
+        if (col) {
+          this.colour[o + 0] = col.r;
+          this.colour[o + 1] = col.g;
+          this.colour[o + 2] = col.b;
+        }
       }
     }
 
     this.geometry.attributes.position.needsUpdate = true;
     this.geometry.attributes.normal.needsUpdate = true;
+    if (this.colour && colours) this.geometry.attributes.color.needsUpdate = true;
     this.geometry.setDrawRange(0, (count - 1) * radial * 6);
   }
 

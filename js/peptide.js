@@ -19,13 +19,16 @@
  */
 
 import * as THREE from './lib/three.module.js';
-import { AMINO, RESIDUE_VOLUME, HYDROPATHY } from './bio.js';
+import {
+  AMINO, RESIDUE_VOLUME, HYDROPATHY, HELIX_PROPENSITY, HELIX_SPACING,
+} from './bio.js';
 import { Ribbon } from './geometry.js';
 
 const CA_SPACING = 3.8;   // A, alpha-carbon to alpha-carbon across a peptide bond
 
 const _m = new THREE.Matrix4();
 const _c = new THREE.Color();
+const _helix = new THREE.Color(0xffb454);
 const _d = new THREE.Vector3();
 
 export class Peptide {
@@ -51,22 +54,111 @@ export class Peptide {
     this.mesh.count = 0;
     parent.add(this.mesh);
 
-    this.ribbon = new Ribbon(capacity, 1.05, 6);
+    this.ribbon = new Ribbon(capacity, 1.05, 6, { vertexColours: true });
     this.ribbonMesh = new THREE.Mesh(this.ribbon.geometry, new THREE.MeshStandardMaterial({
-      color: 0xd8e3f2, roughness: 0.42, metalness: 0.12, envMapIntensity: 1.0,
+      color: 0xffffff, vertexColors: true,
+      roughness: 0.42, metalness: 0.12, envMapIntensity: 1.0,
     }));
     this.ribbonMesh.frustumCulled = false;
     parent.add(this.ribbonMesh);
 
     this._pts = [];
-    for (let i = 0; i < capacity; i++) this._pts.push(new THREE.Vector3());
+    this._cols = [];
+    for (let i = 0; i < capacity; i++) {
+      this._pts.push(new THREE.Vector3());
+      this._cols.push(new THREE.Color());
+    }
+
+    /** Per-residue helix membership, 0..1. Recomputed by helixMask(). */
+    this.helix = new Float32Array(capacity);
+
+    /** Turn the secondary-structure terms on. Off during translation. */
+    this.secondary = false;
+
+    /**
+     * Drawn size of the residue spheres, as a fraction of their real
+     * side-chain volume. At 1 they touch and the chain reads as a solid
+     * surface, which hides the backbone; shrinking them turns the same data
+     * into a ball-and-stick view where the helices are visible. Physics is
+     * unaffected — this is only how it is drawn.
+     */
+    this.residueScale = 1;
+
+    /**
+     * Strength of the hydrophobic attraction. Tuned against villin headpiece,
+     * whose radius of gyration is about 9.5 A and whose helix content is about
+     * 60%: too high and the chain collapses tighter than any real protein and
+     * the core/surface distinction is squeezed out of existence, too low and it
+     * never leaves the coil. At 36, six runs averaged Rg 10.6 and 69% helix,
+     * and buried the greasy residues in every one of them.
+     */
+    this.hydrophobicK = 36;
+
+    /**
+     * Extra separation kept between residues far apart in the chain, on top of
+     * their own radii.
+     *
+     * This is a Ca-only model, and what actually holds two packed helices
+     * apart is not their alpha carbons but the side chains filling the space
+     * between them. Without an allowance for that, helices pack against each
+     * other far closer than they can in reality and the whole protein comes
+     * out about twice as dense as it should be.
+     */
+    this.packingPad = 3.0;
   }
 
   clear() {
     this.count = 0;
     this.folding = 0;
+    this.helix.fill(0);
     this.mesh.count = 0;
     this.ribbon.update([new THREE.Vector3(), new THREE.Vector3()], 0);
+  }
+
+  /** Build a chain directly from a sequence, laid out extended. */
+  fromSequence(seq, at = [0, 0, 0], dir = [1, 0.06, 0.04]) {
+    this.clear();
+    for (let i = 0; i < seq.length && i < this.capacity; i++) {
+      this.push(seq[i], at, dir);
+    }
+  }
+
+  /**
+   * Mean Chou-Fasman helix propensity over the window i..i+4 — the five
+   * residues one turn of helix closes over. A single proline or glycine in
+   * that window drags the mean down and the helix stops there, which is what
+   * they do in real proteins.
+   */
+  helixDrive(i) {
+    let s = 0;
+    for (let k = i; k <= i + 4; k++) s += HELIX_PROPENSITY[this.aa[k]] || 0.9;
+    return s / 5;
+  }
+
+  /**
+   * Which residues ended up in a helix, judged by geometry rather than by the
+   * propensities that encouraged them — so this can disagree with the drive,
+   * and does, which is the point of measuring instead of assuming.
+   */
+  helixMask() {
+    const n = this.count;
+    this.helix.fill(0);
+    for (let i = 0; i + 4 < n; i++) {
+      const d4 = this.pos[i].distanceTo(this.pos[i + 4]);
+      const d3 = this.pos[i].distanceTo(this.pos[i + 3]);
+      const ok = Math.abs(d4 - HELIX_SPACING.i4) < 1.1 && Math.abs(d3 - HELIX_SPACING.i3) < 1.1;
+      if (ok) for (let k = i; k <= i + 4; k++) this.helix[k] = 1;
+    }
+    return this.helix;
+  }
+
+  /** Fraction of residues sitting in a helix. */
+  helixContent() {
+    if (!this.count) return 0;
+    this.helixMask();
+    let h = 0;
+    for (let i = 0; i < this.count; i++) h += this.helix[i];
+    return h / this.count;
   }
 
   /**
@@ -139,19 +231,53 @@ export class Peptide {
         v.addScaledVector(_d, (d - CA_SPACING) * 60 * step);
       }
 
+      // 1b. Secondary structure. Holding i to i+3 at 5.0 A and i to i+4 at
+      //     6.2 A leaves the chain nowhere to go but an alpha helix — those
+      //     distances *are* the helix. The i+4 term stands in for the backbone
+      //     hydrogen bond that actually makes it, and both are weighted by how
+      //     helix-forming the local residues are, so prolines and glycines end
+      //     the helix rather than the geometry being imposed everywhere.
+      if (this.secondary && strength > 0) {
+        for (const [off, target] of [[3, HELIX_SPACING.i3], [4, HELIX_SPACING.i4]]) {
+          for (const j of [i - off, i + off]) {
+            if (j < 0 || j >= n) continue;
+            const drive = this.helixDrive(Math.min(i, j));
+            if (drive < 0.95) continue;              // not a helix-former here
+            _d.copy(this.pos[j]).sub(p);
+            const d = _d.length() || 1e-4;
+            _d.multiplyScalar(1 / d);
+            v.addScaledVector(_d, (d - target) * 26 * (drive - 0.9) * strength * step);
+          }
+        }
+      }
+
       // 2. Excluded volume, and 3. hydrophobic attraction. Both are pairwise,
       //    and at these chain lengths the O(n^2) sweep is free.
       for (let j = 0; j < n; j++) {
-        if (j === i || Math.abs(j - i) === 1) continue;
+        const sep = Math.abs(j - i);
+        if (j === i || sep <= 1) continue;
         _d.copy(this.pos[j]).sub(p);
         const d2 = _d.lengthSq();
         if (d2 < 1e-6) continue;
         const d = Math.sqrt(d2);
         _d.multiplyScalar(1 / d);
 
-        const rsum = this.radiusOf(i) + this.radiusOf(j) + 0.9;
+        // Residues close together in sequence are allowed closer in space:
+        // in a helix, i and i+3 sit 5.0 A apart, which is nearer than two
+        // free residues could ever get. Their side chains splay outwards, so
+        // there is no clash — but a full-size exclusion radius here would
+        // fight the helix terms above and no helix would ever form.
+        const rsum = sep <= 4
+          ? 4.3
+          : this.radiusOf(i) + this.radiusOf(j) + this.packingPad;
         if (d < rsum) {
-          v.addScaledVector(_d, -(rsum - d) * 42 * step);   // push apart
+          // Stiff, and it has to be. A soft exclusion loses the tug of war
+          // against the hydrophobic term and the protein collapses through
+          // itself into a ball far denser than any real one — which also
+          // crushes the helices and closes the pocket. Residues are much
+          // closer to hard spheres than to springs.
+          const overlap = rsum - d;
+          v.addScaledVector(_d, -overlap * (1 + overlap) * 320 * step);
         } else if (d < 18 && strength > 0) {
           const hj = HYDROPATHY[this.aa[j]] || 0;
           // Two greasy residues seek each other; a greasy and a charged one do
@@ -159,7 +285,7 @@ export class Peptide {
           // is Arg-Asp.
           const affinity = (hi * hj) / 20.25;
           if (affinity > 0) {
-            v.addScaledVector(_d, affinity * 60 * strength * step * (1 - d / 18));
+            v.addScaledVector(_d, affinity * this.hydrophobicK * strength * step * (1 - d / 18));
           }
         }
       }
@@ -210,6 +336,65 @@ export class Peptide {
     return Math.sqrt(s / n);
   }
 
+  /**
+   * Find the largest cleft on the surface — the active site.
+   *
+   * An enzyme's active site is a pocket: a dent big enough for the substrate,
+   * walled on most sides, and usually lined with the greasy residues that grip
+   * it. Rather than nominate residues by hand, this looks for the geometry.
+   * Candidate points are scattered on a shell around the protein and scored on
+   * being empty where the substrate would sit but enclosed just beyond that,
+   * with a bonus for hydrophobic walls.
+   *
+   * It follows that an unfolded chain has no pocket to find, which is the whole
+   * argument for why denaturing a protein stops it working.
+   *
+   * @returns {{point: THREE.Vector3, score: number, lining: number[]}|null}
+   */
+  findPocket({ probe = 4.2, samples = 260 } = {}) {
+    const n = this.count;
+    if (n < 12) return null;
+
+    let cx = 0, cy = 0, cz = 0;
+    for (let i = 0; i < n; i++) { cx += this.pos[i].x; cy += this.pos[i].y; cz += this.pos[i].z; }
+    cx /= n; cy /= n; cz /= n;
+    const rg = this.radiusOfGyration() || 1;
+
+    let best = null;
+    // Fibonacci sphere, at a couple of shell radii, so the search covers the
+    // surface evenly instead of clumping at the poles.
+    const golden = Math.PI * (3 - Math.sqrt(5));
+    for (const shell of [rg * 0.95, rg * 1.2]) {
+      for (let s = 0; s < samples; s++) {
+        const y = 1 - (s / (samples - 1)) * 2;
+        const r = Math.sqrt(Math.max(0, 1 - y * y));
+        const th = golden * s;
+        const px = cx + Math.cos(th) * r * shell;
+        const py = cy + y * shell;
+        const pz = cz + Math.sin(th) * r * shell;
+
+        let clash = 0, wall = 0, greasy = 0;
+        const lining = [];
+        for (let i = 0; i < n; i++) {
+          const d = Math.hypot(this.pos[i].x - px, this.pos[i].y - py, this.pos[i].z - pz);
+          if (d < probe) { clash++; break; }                 // substrate would not fit
+          if (d < probe + 5.5) {
+            wall++;
+            lining.push(i);
+            if ((HYDROPATHY[this.aa[i]] || 0) > 0) greasy++;
+          }
+        }
+        if (clash) continue;
+        if (wall < 4) continue;                              // out in open water
+        const score = wall + greasy * 0.9;
+        if (!best || score > best.score) {
+          best = { point: new THREE.Vector3(px, py, pz), score, lining };
+        }
+      }
+    }
+    return best;
+  }
+
   /** Fraction of hydrophobic residues that ended up buried. */
   buriedFraction() {
     const n = this.count;
@@ -233,8 +418,10 @@ export class Peptide {
     this.mesh.count = n;
     if (!n) { this.ribbonMesh.visible = false; return; }
 
+    if (this.secondary) this.helixMask();
+
     for (let i = 0; i < n; i++) {
-      const r = this.radiusOf(i);
+      const r = this.radiusOf(i) * this.residueScale;
       _m.makeScale(r, r, r);
       _m.setPosition(this.pos[i]);
       this.mesh.setMatrixAt(i, _m);
@@ -242,12 +429,17 @@ export class Peptide {
       _c.setHex(info.colour);
       this.mesh.instanceColor.setXYZ(i, _c.r, _c.g, _c.b);
       this._pts[i].copy(this.pos[i]);
+
+      // Backbone coloured by secondary structure: warm where the chain has
+      // closed into a helix, cool where it is still loop or coil.
+      const h = this.secondary ? this.helix[i] : 0;
+      this._cols[i].setHex(0x9fb4d0).lerp(_helix, h);
     }
     this.mesh.instanceMatrix.needsUpdate = true;
     this.mesh.instanceColor.needsUpdate = true;
 
     if (n >= 2) {
-      this.ribbon.update(this._pts, n);
+      this.ribbon.update(this._pts, n, null, this._cols);
       this.ribbonMesh.visible = true;
     } else {
       this.ribbonMesh.visible = false;

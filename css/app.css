@@ -141,6 +141,8 @@ html, body {
 /* modes */
 
 #modes { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+/* Odd button out spans the row rather than leaving a hole. */
+#modes button:last-child:nth-child(odd) { grid-column: 1 / -1; }
 #modes button {
   appearance: none;
   border: 1px solid var(--line-soft);
@@ -237,6 +239,7 @@ button.primary:hover { background: rgba(99, 211, 255, 0.24); }
   font-size: 11px;
   color: var(--ink-faint);
 }
+.slider > span i { font-style: normal; }
 .slider b { color: var(--ink-dim); font-weight: 500; font-family: var(--mono); }
 
 input[type="range"] {

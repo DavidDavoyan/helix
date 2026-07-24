@@ -1,9 +1,10 @@
 # Helix
 
-An interactive simulation of DNA, in the browser. The double helix and what
-heat does to it, a replication fork, a transcription bubble, and a ribosome
-building a protein — all laid out from real molecular geometry, and all driven
-by a sequence you can type in and mutate.
+An interactive simulation of DNA and the proteins it codes for, in the browser.
+The double helix and what heat does to it, a replication fork, a transcription
+bubble, a ribosome building a protein, and then that protein folding up and
+going to work — all laid out from real molecular geometry, and all driven by a
+sequence you can type in and mutate.
 
 No build step, no package manager, no network. Open `index.html` and it runs.
 
@@ -45,6 +46,33 @@ A site constantly and nearly all of them are wrong and fall straight back out.
 When one pairs, the chain is handed to it and the ribosome steps exactly three
 bases. Then the finished chain folds.
 
+**Proteins.** What the chain becomes, and why that matters.
+
+![the proteins view](docs/protein.jpg)
+
+It arrives as a floppy string with no shape and no function. Heat shakes it
+through conformations while the greasy residues hold on to whatever brings them
+together; the backbone closes into helices wherever the local residues favour
+them, and stops at prolines and glycines, which is what those two do in real
+proteins. Then a pocket appears on the surface — lined by residues that sit far
+apart along the chain and are brought together only by the fold. Nothing
+nominates that pocket; it is found by searching the folded geometry for a dent
+big enough for the substrate and walled on most sides.
+
+That pocket is the whole job. Substrate diffuses in, is held, is cut, and the
+two pieces leave, with the enzyme unchanged — which is what makes it a catalyst
+rather than a reagent.
+
+Then push the temperature up. The fold lets go over a narrow range rather than
+softening gradually, because it is held by many weak interactions that have to
+give way together. The helices unwind, the pocket stops existing, and turnovers
+stop dead. Cool it again and it refolds and resumes. Same atoms, same bonds,
+same sequence — the only thing that changed is the shape, and the shape was the
+mechanism. That is the answer to how a protein works.
+
+Use the villin headpiece preset for this. The other presets code for peptides
+of about twenty residues, which is too short to have an inside.
+
 **Mutation.** Click any base in the strip along the bottom to change it. In
 translation the readout tells you whether it was silent, missense or nonsense.
 The beta-globin preset is set up so that one click at position 20 turns GAG into
@@ -60,10 +88,11 @@ GTG, which is sickle-cell disease.
 | `js/render.js` | Draws chains. Four instanced meshes and a pool of ribbons; stateless between frames. |
 | `js/pool.js` | The free nucleotide pool, its diffusion, and selection by rejection. |
 | `js/machines.js` | Helicase, polymerases, ribosome, tRNA, and the smaller proteins. |
-| `js/peptide.js` | The growing chain and its hydrophobic collapse. |
+| `js/peptide.js` | The chain: hydrophobic collapse, helix formation, and the pocket search. |
 | `js/stage.js` | The shared world and the layout conventions every scene obeys. |
 | `js/scene-dna.js` | The molecule, and replication. |
 | `js/scene-expression.js` | Transcription, and translation. |
+| `js/scene-protein.js` | Folding, catalysis, denaturation, and the substrate. |
 | `js/post.js` | Bright pass, two blur scales, bloom, ACES, grade, vignette, grain. |
 | `js/controls.js`, `js/ui.js`, `js/main.js` | Orbit camera, the panel and sequence strip, and the wiring. |
 
@@ -88,9 +117,15 @@ plate is drawn from C1′ rather than from the glycosidic nitrogen further in.
 
 Also accurate: two hydrogen bonds on A·T and three on G·C, antiparallel strands,
 11° propeller twist, 5′→3′ synthesis and everything that follows from it, the
-standard genetic code in full, 3.8 Å between consecutive alpha carbons, measured
-side-chain volumes, Kyte-Doolittle hydropathy, and selection by rejection —
-wrong nucleotides and wrong tRNAs really do arrive, fail to pair, and leave.
+standard genetic code in full, 3.8 Å between consecutive alpha carbons, the
+5.0 Å and 6.2 Å spacings that define an alpha helix, measured side-chain
+volumes, Kyte-Doolittle hydropathy, Chou-Fasman helix propensity, and selection
+by rejection — wrong nucleotides and wrong tRNAs really do arrive, fail to pair,
+and leave.
+
+The sequences are real. The insulin preset translates to the insulin B chain,
+the beta-globin preset to MVHLTPEEKSAVTALWGK, and the villin preset to the
+36-residue headpiece used as the standard folding benchmark.
 
 **Not accurate.** The proteins are lumpy blobs, not structures; a helicase here
 is a ring because it encircles a strand, not because it resembles DnaB.
@@ -100,27 +135,44 @@ travels at a constant rate instead of stalling and backtracking the way a real
 polymerase does.
 
 The folding is the loosest part and is best read as an illustration rather than
-a result. It is a hydrophobic collapse: the chain holds itself at 3.8 Å between
-neighbours, residues cannot overlap, greasy residues attract each other in
-proportion to the product of their hydropathies, and a thermal term shakes the
-chain while that plays out — annealed downwards, so it starts hot enough to
-leave the extended shape it was extruded in and ends cold enough for the
-hydrophobic term to hold what it found.
+a result. It is a hydrophobic collapse with a helix term:
 
-What it actually does, measured: a 21-residue chain like the insulin preset
-collapses from a rod of radius of gyration ~22 Å to a compact globule at ~11 Å.
-Whether the greasy residues end up *buried* depends on having enough chain to
-have an inside at all. At 21 residues they do not — greasy and polar sit at the
-same mean radius, which is also true of real peptides that short; a hydrophobic
-core needs something like fifty residues before it means anything. Given a
-60-residue chain the same code does sort, putting hydrophobic residues about
-4 Å closer to the centre than polar ones, and more strongly than that when the
-two kinds are well mixed along the chain.
+- the chain holds itself at 3.8 Å between consecutive alpha carbons;
+- residues cannot overlap, with an allowance for the side chains that a
+  Cα-only model does not otherwise have — without it the protein comes out
+  about twice as dense as any real one;
+- greasy residues attract each other in proportion to the product of their
+  Kyte-Doolittle hydropathies;
+- the backbone is pulled towards 5.0 Å at i→i+3 and 6.2 Å at i→i+4, weighted by
+  Chou-Fasman helix propensity. Those two distances *are* an alpha helix, and
+  the weighting is why helices stop at prolines and glycines;
+- a thermal term shakes the whole thing, annealed downwards so it starts hot
+  enough to leave the extended shape and ends cold enough to keep what it found.
 
-So: the mechanism is real and it is the real reason proteins fold. It is not a
-structure prediction, it will not give you the right fold for any sequence, and
-on the short presets here you should expect a compact ball rather than a
-convincing core.
+The thermal term is not decoration. A chain extruded straight has every pairwise
+force along it collinear, so it is an unstable equilibrium and will stay a rod
+for ever no matter how strong the attraction. Something has to break the
+symmetry, and in a cell that something is heat.
+
+What it does, measured against villin headpiece HP36 over six runs: mean radius
+of gyration 10.6 Å against a real 9.5, mean helix content 69% against a real
+~60%, a pocket found every time, and hydrophobic residues buried closer to the
+centre than polar ones in every run. Denaturing removes the helices, the pocket
+and the catalysis, and cooling restores all three.
+
+It is still not a structure prediction and will not give you the right fold for
+any sequence. And on the short presets — around twenty residues — expect a
+compact ball rather than a convincing core, because a chain that short has no
+inside. That is true of real peptides that short too.
+
+The catalysis has one honest cheat in it. Substrate is confined to a small
+volume around the enzyme and is steered towards the mouth of the site when it
+gets close. Free diffusion in an open box would essentially never put a
+substrate into a pocket 10 Å across, and the scene would show nothing happening.
+Real enzymes have the same problem and solve it the same way — charged residues
+around the site set up a field that pulls substrate in, which is how the fastest
+of them reach the diffusion limit — but the concentrations and rates here are
+chosen to be watchable, not measured.
 
 Melting is a window-averaged hydrogen bond count with an end-fraying term, not a
 nearest-neighbour thermodynamic model. It gets the behaviour right — ends first,
