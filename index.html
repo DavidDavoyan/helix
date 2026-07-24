@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Helix — DNA, working</title>
+<meta name="description" content="An interactive, physically laid-out simulation of DNA: the double helix, melting, replication, transcription and translation, rendered in WebGL from a sequence you can edit.">
+<link rel="stylesheet" href="css/app.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>🧬</text></svg>">
+</head>
+<body>
+
+<canvas id="stage"></canvas>
+
+<div id="loading"><span>assembling</span></div>
+
+<main id="ui" hidden>
+
+  <!-- ------------------------------------------------------ left panel -->
+  <aside id="panel">
+    <header>
+      <h1>Helix</h1>
+      <p class="sub">DNA, working. Every distance on screen is in ångströms.</p>
+    </header>
+
+    <nav id="modes" role="tablist" aria-label="Process"></nav>
+
+    <section class="block" id="seq-block">
+      <div class="block-head">
+        <h2>Sequence</h2>
+        <select id="preset" aria-label="Load a sequence"></select>
+      </div>
+      <textarea id="seq-input" spellcheck="false" autocomplete="off"
+                aria-label="DNA sequence, coding strand, 5 prime to 3 prime"></textarea>
+      <p class="note" id="seq-note"></p>
+      <div class="seq-meta">
+        <span id="seq-len">—</span>
+        <span id="seq-gc">—</span>
+        <span id="seq-tm">—</span>
+      </div>
+    </section>
+
+    <section class="block" id="controls-block">
+      <div class="block-head"><h2>Run</h2></div>
+      <div class="row buttons">
+        <button id="play" class="primary" type="button">Pause</button>
+        <button id="restart" type="button">Restart</button>
+      </div>
+      <label class="slider">
+        <span>Speed <b id="speed-val">1.0×</b></span>
+        <input id="speed" type="range" min="0.15" max="3" step="0.05" value="1">
+      </label>
+      <label class="slider" id="temp-row">
+        <span>Temperature <b id="temp-val">25 °C</b></span>
+        <input id="temp" type="range" min="0" max="1" step="0.01" value="0">
+      </label>
+    </section>
+
+    <section class="block" id="view-block">
+      <div class="block-head"><h2>Show</h2></div>
+      <div class="toggles" id="toggles"></div>
+    </section>
+
+    <footer class="panel-foot">
+      <button id="about-open" type="button" class="linkish">What am I looking at?</button>
+      <a href="https://github.com/" id="repo-link" target="_blank" rel="noopener">Source</a>
+    </footer>
+  </aside>
+
+  <!-- ---------------------------------------------------- right readout -->
+  <aside id="readout">
+    <div id="caption"></div>
+    <div class="progress"><i id="progress-bar"></i></div>
+    <dl id="stats"></dl>
+    <ul id="events"></ul>
+    <div id="peptide-strip" hidden>
+      <h3>Protein so far</h3>
+      <div id="peptide-list"></div>
+    </div>
+  </aside>
+
+  <!-- ------------------------------------------------------ bottom track -->
+  <section id="track">
+    <div class="track-head">
+      <span id="track-label">Coding strand, 5′ → 3′</span>
+      <span class="track-hint">click a base to mutate it</span>
+    </div>
+    <div id="track-strip"></div>
+    <div id="track-frame"></div>
+    <div id="mutation-note" hidden></div>
+  </section>
+
+</main>
+
+<!-- --------------------------------------------------------- about modal -->
+<div id="about" hidden>
+  <div class="about-card" role="dialog" aria-modal="true" aria-label="About Helix">
+    <button id="about-close" type="button" aria-label="Close">×</button>
+    <h2>What am I looking at?</h2>
+
+    <p>A real molecule, laid out from real numbers. The helix rises 3.38 Å per
+    base pair and turns 34.3° — ten and a half pairs per turn. The two backbones
+    are 127° apart around the axis, not 180°, which is why one groove is wide
+    and the other is narrow. Get that angle wrong and you lose the reason a
+    protein can read a sequence without opening the helix at all.</p>
+
+    <h3>The four views</h3>
+    <dl>
+      <dt>The molecule</dt>
+      <dd>The duplex at rest, and what heat does to it. Turn the temperature up
+      and it opens at the ends first, then wherever A·T runs — two hydrogen
+      bonds instead of three. Try it on the TATA box preset.</dd>
+
+      <dt>Replication</dt>
+      <dd>One fork, two daughter helices. Polymerase can only extend a 3′ end,
+      so one new strand runs smoothly into the fork and the other has to be
+      built backwards in pieces. Those pieces are Okazaki fragments.</dd>
+
+      <dt>Transcription</dt>
+      <dd>A bubble of fourteen base pairs travelling along the molecule, with a
+      transcript being pushed out sideways so the DNA can shut behind it.</dd>
+
+      <dt>Translation</dt>
+      <dd>The ribosome, three nucleotides at a time. Wrong tRNAs arrive
+      constantly and fall out; the right one stays. Then the chain folds.</dd>
+    </dl>
+
+    <h3>Where it is honest, and where it is not</h3>
+    <p><b>Honest:</b> helical parameters, groove asymmetry, purine and
+    pyrimidine ring counts, two-versus-three hydrogen bonds, antiparallel
+    strands, 5′→3′ synthesis and everything that follows from it, the standard
+    genetic code, 3.8 Å between alpha carbons, and selection by rejection —
+    wrong subunits really do arrive and leave.</p>
+    <p><b>Not:</b> the proteins are lumpy blobs, not structures. Timescales are
+    slowed by a factor of roughly a million. Okazaki fragments are 9 bases here
+    and 1,000–2,000 in a bacterium. The folding is a hydrophobic-collapse toy:
+    it genuinely compacts the chain, from a rod of about 22 Å radius of gyration
+    to a globule of about 11 Å, and with enough chain it does bury the greasy
+    residues — but the peptides here are too short to have an inside, so expect
+    a ball rather than a core. It is not a structure prediction.</p>
+
+    <h3>Controls</h3>
+    <p>Drag to orbit, scroll to zoom, shift-drag or right-drag to pan. Click any
+    base in the strip along the bottom to mutate it, and watch what that does to
+    the protein.</p>
+  </div>
+</div>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
