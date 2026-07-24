@@ -6,18 +6,23 @@ bubble, a ribosome building a protein, and then that protein folding up and
 going to work — all laid out from real molecular geometry, and all driven by a
 sequence you can type in and mutate.
 
+**▶ Run it in your browser: [daviddavoyan.github.io/helix](https://daviddavoyan.github.io/helix/)**
+
 No build step, no package manager, no network. Open `index.html` and it runs.
 
 ![the double helix](docs/structure.jpg)
 
 ## Running it
 
+It is live at [daviddavoyan.github.io/helix](https://daviddavoyan.github.io/helix/).
+To run it locally:
+
 ```bash
 npx -y serve -l 5182 .
 ```
 
-Any static file server works, and it runs offline. There is one dependency,
-`three.module.js`, vendored in `js/lib/`.
+Any static file server works, and it runs offline once loaded. There is one
+dependency, `three.module.js`, vendored in `js/lib/`. It needs WebGL 2.
 
 ## What is on screen
 
